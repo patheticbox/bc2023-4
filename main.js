@@ -1,52 +1,61 @@
-const http = require('http');
+const http = require("http");
 const fs = require('fs');
-const xml = require('fast-xml-parser');
+const xml = require("fast-xml-parser");
 
-const server = http.createServer((req, res) => {
-  try {
-    const xmlData = fs.readFileSync('data.xml', 'utf8');
 
-    if (!xmlData) {
-      throw new Error('XML файл порожній або не знайдений.');
-    }
 
-    const options = {
-      attributeNamePrefix: '',
-      ignoreAttributes: false,
-    };
+const parser = new xml.XMLParser();
+const builder = new xml.XMLBuilder();
+const host = 'localhost';
+const port = 8000;
 
-    const parser = new xml.XMLParser(options);
-    const obj = parser.parse(xmlData, options);
+const requestListener = function (req,res) {
 
-    if (obj && obj.indicators && Array.isArray(obj.indicators.basindbank)) {
-      const data = obj.indicators.basindbank;
-      const sortedData = data
-        .filter((item) => item.parent === 'BS3_BanksLiab')
-        .map((item) => ({
-          txten: item.txten,
-          value: item.value,
-        }));
+    // читання файлу data.xml
+    fs.readFile("data.xml", (err, data) => {
+       if (err) {
+        console.log("error");
+        res.writeHead(400);
+       } else {
 
-      const newObj = {
-        data: {
-          indicators: sortedData,
-        },
-      };
+        //xml заголовок
+        res.setHeader('Content-Type', 'text/xml');
+        res.writeHead(200);
 
-      const builder = new xml.XMLBuilder();
-      const xmlStr = builder.buildObject(newObj);
+        // парсимо дані з data.xml у масив
+        const obj = parser.parse(data.toString())['indicators']['basindbank'];
 
-      res.writeHead(200, { 'Content-Type': 'application/xml' });
-      res.end(xmlStr);
-    }
-  } catch (error) {
-    res.writeHead(500, { 'Content-Type': 'text/plain' });
-    res.end('Помилка: ' + error.message);
-  }
-});
+        const filtered = obj.filter(v => v.parent == 'BS3_BanksLiab');
 
-const PORT = 8080;
+        const txten = [];
+        for (const i of filtered) {
+            txten.push(i['txten']);
+        }
 
-server.listen(PORT, () => {
-  console.log(`Сервер запущено на localhost:${PORT}`);
+        const values = [];
+        for (const i of filtered) {
+            values.push(i['value']);
+        }
+
+        // створюємо новий xml об'єкт
+        const newObj = builder.build({
+            data: { 
+                indicators: txten.map((txtItem, index) => ({
+                txt: txtItem,
+                value: values[index]
+            }))
+        }
+        });
+
+        // виводимо дані формату xml за запитом
+        res.end(newObj);
+       }
+    });
+};
+
+
+const server = http.createServer(requestListener);
+
+server.listen(port, host, () => {
+    console.log(`Server is running on http://${host}:${port}`);
 });
